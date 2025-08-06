@@ -1,0 +1,6 @@
+# /workspace/streamlit_template/requirements.txt
+streamlit
+pandas
+openpyxl
+supabase
+streamlit-option-menu
