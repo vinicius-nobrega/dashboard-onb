@@ -22,20 +22,29 @@ DEMO_USERS = {
 
 # --- Funções de Autenticação ---
 
+# auth.py -> Cole esta nova versão da função login_form() no lugar da antiga
+
 def login_form():
     """Exibe o formulário de login e lida com a submissão."""
     st.title("Login - Dashboard ONB")
-    if not st.session_state.supabase_connected:
-        st.warning("Executando em modo de demonstração. Conexão com o banco de dados não encontrada.")
+
+    # --- INÍCIO DA MUDANÇA ---
+    # Usamos .get() que é mais seguro.
+    # Ele retorna um valor (True/False) se a chave existir, ou None se não existir, mas NÃO quebra o programa.
+    is_connected = st.session_state.get("supabase_connected")
+    # --- FIM DA MUDANÇA ---
+
+    if not is_connected:
+        st.warning("Executando em modo de demonstração. Verifique a configuração de 'Secrets' no Streamlit Cloud se isso não for esperado.")
     
     with st.form("login_form"):
-        email = st.text_input("Email", value="lider@exemplo.com" if not st.session_state.supabase_connected else "")
-        password = st.text_input("Senha", type="password", value="lider123" if not st.session_state.supabase_connected else "")
+        email = st.text_input("Email", value="lider@exemplo.com" if not is_connected else "")
+        password = st.text_input("Senha", type="password", value="lider123" if not is_connected else "")
         submitted = st.form_submit_button("Login")
 
         if submitted:
-            if st.session_state.supabase_connected:
-                # Lógica de login online com Supabase
+            # A lógica de login online só roda se a conexão for bem sucedida
+            if is_connected:
                 try:
                     user = supabase.auth.sign_in_with_password({"email": email, "password": password})
                     st.session_state.logged_in = True
@@ -43,11 +52,10 @@ def login_form():
                     st.rerun()
                 except Exception as e:
                     st.error("Email ou senha inválidos.")
+            # Lógica de login offline (modo demonstração)
             else:
-                # Lógica de login offline (modo demonstração)
                 if email in DEMO_USERS and DEMO_USERS[email]["password"] == password:
                     st.session_state.logged_in = True
-                    # Simula um objeto de usuário para o modo offline
                     st.session_state.user = type('User', (object,), {'email': email})() 
                     st.rerun()
                 else:
@@ -81,4 +89,5 @@ def autenticador():
     else:
         user = st.session_state.get('user')
         user_profile = get_user_profile(user)
+
         return user, user_profile
