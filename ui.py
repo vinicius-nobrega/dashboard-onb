@@ -1,5 +1,6 @@
 # /workspace/streamlit_template/ui.py
 import streamlit as st
+import pandas as pd
 from data_analysis import categorizar_clientes
 
 def exibir_dashboard_base(df_analise, recomedacoes_personalizadas, filtro_responsavel=None):
@@ -80,4 +81,5 @@ def exibir_dashboard_lider(user_profile, df_analise, recomedacoes_personalizadas
     if membro_selecionado == "Toda a Equipe":
         exibir_dashboard_base(df_analise, recomedacoes_personalizadas)
     else:
+
         exibir_dashboard_base(df_analise, recomedacoes_personalizadas, filtro_responsavel=membro_selecionado)
