@@ -3,28 +3,51 @@ import pandas as pd
 import streamlit as st
 
 def categorizar_clientes(df):
-    """Categoriza os clientes em WAITING, AVANÇAR e ATUAR."""
+    """
+    Categoriza os clientes em WAITING, AVANÇAR e ATUAR com base no DataFrame fornecido.
+    Esta versão é robusta a variações de maiúsculas/minúsculas e espaços nos nomes das colunas.
+    """
     if df is None or df.empty:
         return None, None, None
 
-    # Garante que a coluna de data exista e converte para datetime
-    if 'ONB Start' not in df.columns or 'ONB grade' not in df.columns:
-        st.error("A planilha precisa conter as colunas 'ONB Start' e 'ONB grade'.")
+    # --- INÍCIO DA MELHORIA ---
+    # Mapeia os nomes das colunas originais para nomes normalizados (minúsculos e sem espaços)
+    col_map = {col.strip().lower(): col for col in df.columns}
+
+    # Define os nomes de coluna normalizados que estamos procurando
+    TARGET_START_NORMALIZED = 'onb start (onboarding_at_cx)'
+    TARGET_GRADE_NORMALIZED = 'onb grade'
+    TARGET_TECH_START_NORMALIZED = 'technical onb start (commercial from date)'
+
+    # Verifica se as colunas essenciais existem no mapeamento
+    if TARGET_START_NORMALIZED not in col_map or TARGET_GRADE_NORMALIZED not in col_map:
+        st.error("ERRO: A planilha precisa conter colunas que correspondam a 'ONB start (onboarding_at_cx)' e 'ONB grade'.")
+        st.info(f"Colunas encontradas no seu arquivo: {list(df.columns)}")
         return None, None, None
 
-    df['ONB Start Date'] = pd.to_datetime(df['ONB Start'], errors='coerce')
+    # Obtém os nomes das colunas originais usando o mapeamento
+    original_start_col = col_map[TARGET_START_NORMALIZED]
+    original_grade_col = col_map[TARGET_GRADE_NORMALIZED]
+    # --- FIM DA MELHORIA ---
+
+    # Converte a coluna de data para o formato datetime, usando o nome original da coluna
+    df['ONB Start Date'] = pd.to_datetime(df[original_start_col], errors='coerce')
     
     # Separa os que não têm data
     waiting_df = df[df['ONB Start Date'].isna()].copy()
-    if 'Technical ONB start' in waiting_df.columns:
-        waiting_df['Technical ONB start Date'] = pd.to_datetime(waiting_df['Technical ONB start'], errors='coerce')
+    
+    # Ordena o grupo 'WAITING' se a coluna técnica existir
+    if TARGET_TECH_START_NORMALIZED in col_map:
+        original_tech_start_col = col_map[TARGET_TECH_START_NORMALIZED]
+        waiting_df['Technical ONB start Date'] = pd.to_datetime(waiting_df[original_tech_start_col], errors='coerce')
         waiting_df = waiting_df.sort_values(by='Technical ONB start Date', ascending=True)
 
     # Separa os que têm data
     com_data_df = df.dropna(subset=['ONB Start Date'])
     
-    avancar_df = com_data_df[com_data_df['ONB grade'] == 'A'].copy()
-    atuar_df = com_data_df[com_data_df['ONB grade'] != 'A'].copy()
+    # Categoriza em Avançar (grade A) e Atuar (grade diferente de A)
+    avancar_df = com_data_df[com_data_df[original_grade_col] == 'A'].copy()
+    atuar_df = com_data_df[com_data_df[original_grade_col] != 'A'].copy()
 
     return waiting_df, avancar_df, atuar_df
 
@@ -38,12 +61,9 @@ def analisar_respostas_cliente(texto):
     texto_lower = texto.lower()
 
     # Análise do plano (considera o caso especial do Starter)
-    plano = "não identificado"
     if "plano: starter" in texto_lower:
-        plano = "Starter"
         recomendacoes.append("⚠️ **Plano Starter:** Lembre-se que este plano não inclui Prontuário e CAD. Foque em outras áreas para aumentar o score.")
     elif "plano:" in texto_lower:
-        plano = "Outro" # Identifica que é um plano que não é o starter
         recomendacoes.append("✅ **Plano Completo:** Explore todas as funcionalidades, incluindo Prontuário e CAD, para maximizar a pontuação.")
 
     # Análise de Teleconsulta
