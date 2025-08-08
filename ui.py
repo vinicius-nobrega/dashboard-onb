@@ -1,173 +1,146 @@
-# ui.py (VERSÃO 2.0)
+# ui.py (VERSÃO FINAL)
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# Importa as novas funções de análise que criamos
-from data_analysis import analisar_pontuacao_doutor, calcular_dias_restantes
+from data_analysis import analisar_pontuacao_doutor, calcular_dias_restantes, analisar_respostas_cliente
 
-def exibir_painel_kpis(df_completo, col_map):
-    """Exibe o painel superior com KPIs e filtros de data."""
-    st.header("Painel de Metas da Carteira")
+def exibir_painel_metas(df_completo, col_map):
+    """Exibe o painel superior com medidores de metas."""
+    st.header("Metas da Carteira")
 
-    # Colunas para os filtros
-    col1, col2 = st.columns(2)
+    metas = {'A': 60, 'A+B': 77, 'Bookable Hours': 50}
     
     # Filtro de data
     hoje = datetime.now()
     inicio_mes = hoje.replace(day=1)
-    
-    with col1:
-        data_inicio = st.date_input("Data de Início", value=inicio_mes)
-    with col2:
-        data_fim = st.date_input("Data de Fim", value=hoje)
+    col1, col2 = st.columns(2)
+    data_inicio = col1.date_input("Data de Início do Filtro", value=inicio_mes)
+    data_fim = col2.date_input("Data de Fim do Filtro", value=hoje)
 
-    # Garante que as datas estão no formato correto para comparação
-    data_inicio = pd.to_datetime(data_inicio)
-    data_fim = pd.to_datetime(data_fim)
-    
-    # Filtra o DataFrame com base no intervalo de datas
-    # Usaremos a coluna de fim do onboarding para a meta
-    onb_end_col = col_map.get('onb end (farming_at_cx)', None)
-    if onb_end_col:
-        df_filtrado = df_completo[pd.to_datetime(df_completo[onb_end_col], errors='coerce').between(data_inicio, data_fim)]
-    else:
-        df_filtrado = df_completo # Se não houver coluna de data, usa o df completo
+    onb_end_col = col_map.get('onb end (farming_at_cx)')
+    df_filtrado = df_completo[pd.to_datetime(df_completo[onb_end_col], errors='coerce').dt.date.between(data_inicio, data_fim)] if onb_end_col else df_completo
 
-    total_clientes = len(df_filtrado)
-    if total_clientes == 0:
-        st.warning("Nenhum cliente encontrado no período selecionado para calcular as metas.")
+    if df_filtrado.empty:
+        st.warning("Nenhum cliente com data de finalização no período selecionado.")
         return
 
+    # Cálculos
+    total = len(df_filtrado)
     grade_col = col_map['onb grade']
-    
-    # Cálculos de KPI
     nota_a = df_filtrado[df_filtrado[grade_col] == 'A'].shape[0]
     nota_b = df_filtrado[df_filtrado[grade_col] == 'B'].shape[0]
-    nota_c = df_filtrado[df_filtrado[grade_col] == 'C'].shape[0]
-    nota_d = df_filtrado[df_filtrado[grade_col] == 'D'].shape[0]
+    perc_a = (nota_a / total) * 100
+    perc_a_b = ((nota_a + nota_b) / total) * 100
     
-    perc_a = (nota_a / total_clientes) * 100
-    perc_a_b = ((nota_a + nota_b) / total_clientes) * 100
-    perc_c = (nota_c / total_clientes) * 100
-    perc_d = (nota_d / total_clientes) * 100
+    bookable_hours_col = col_map.get('bookable hours')
+    avg_bookable_hours = df_filtrado[bookable_hours_col].mean() if bookable_hours_col else 0
 
-    # Exibição dos KPIs
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric(label="Carteira em A", value=f"{perc_a:.1f}%")
-    kpi2.metric(label="Carteira em A+B", value=f"{perc_a_b:.1f}%")
-    kpi3.metric(label="Carteira em C", value=f"{perc_c:.1f}%")
-    kpi4.metric(label="Carteira em D", value=f"{perc_d:.1f}%")
+    # Exibição das metas
+    kpi1, kpi2, kpi3 = st.columns(3)
+    kpi1.write(f"**Meta % em A: {metas['A']}%**")
+    st.progress(perc_a / 100)
+    kpi1.write(f"Atual: {perc_a:.1f}%")
+
+    kpi2.write(f"**Meta % em A+B: {metas['A+B']}%**")
+    st.progress(perc_a_b / 100)
+    kpi2.write(f"Atual: {perc_a_b:.1f}%")
+    
+    kpi3.write(f"**Meta Média de Horas: {metas['Bookable Hours']}%**")
+    st.progress(avg_bookable_hours / 100 if avg_bookable_hours <=100 else 1.0) # Normaliza caso a média passe de 100
+    kpi3.write(f"Atual: {avg_bookable_hours:.1f}")
+
     st.markdown("---")
-
 
 def exibir_detalhes_doutor(doutor_selecionado, df_completo, col_map):
     """Exibe a análise detalhada para um único doutor."""
-    
-    # Pega a linha inteira de dados do doutor selecionado
     doutor_series = df_completo[df_completo[col_map['doctor_name']] == doutor_selecionado].iloc[0]
 
-    st.subheader(f"Análise Detalhada: {doutor_selecionado}")
+    with st.form(key=f"form_respostas_{doutor_selecionado}"):
+        st.subheader("Análise de Respostas da Reunião")
+        texto_reuniao = st.text_area("Cole aqui o texto da primeira reunião para gerar insights automatizados:", height=150)
+        submitted = st.form_submit_button("Analisar Respostas e Gerar Insights")
 
-    # --- Informações Gerais ---
+    if submitted and texto_reuniao:
+        with st.spinner('Analisando...'):
+            insights = analisar_respostas_cliente(texto_reuniao)
+            st.subheader("💡 Insights da Reunião:")
+            for insight in insights:
+                st.info(insight)
+    st.markdown("---")
+
+    st.subheader(f"Painel de Ação: {doutor_selecionado}")
+    
+    # Informações Gerais
     col1, col2, col3 = st.columns(3)
-    
-    # Dias Restantes
-    onb_start_col = col_map.get('onb start (onboarding_at_cx)')
-    dias_restantes = calcular_dias_restantes(doutor_series[onb_start_col])
+    dias_restantes = calcular_dias_restantes(doutor_series[col_map['onb end (farming_at_cx)']])
     col1.metric("Dias Restantes no Onboarding", value=dias_restantes)
-    
-    # Link do HubSpot
-    hubspot_col = col_map.get('sf or hs link')
-    if hubspot_col and pd.notna(doutor_series[hubspot_col]):
-        col2.markdown(f"**HubSpot Link**\n\n[Acessar Perfil]({doutor_series[hubspot_col]})")
-    else:
-        col2.info("Link do HubSpot não disponível.")
-    
-    # Plano
-    package_col = col_map.get('package')
-    plano_atual = doutor_series.get(package_col, "Não definido")
-    if pd.isna(plano_atual) or plano_atual == "Não definido":
-        plano_atual = col3.selectbox("Selecione o Plano:", options=["STARTER", "PLUS", "VIP"], key=f"plano_{doutor_selecionado}")
-    col3.metric("Plano", value=plano_atual)
-    
-    st.markdown("---")
+    col2.metric("Curva Atual (ONB Grade)", value=doutor_series[col_map['onb grade']])
+    hubspot_link = doutor_series.get(col_map.get('sf or hs link'))
+    if hubspot_link and pd.notna(hubspot_link):
+        col3.markdown(f"**[Acessar HubSpot]({hubspot_link})**")
 
-    # --- Análise de Pontuação ---
-    st.subheader("Análise de Pontuação")
+    # Análise de Pontuação
     analise_pontos = analisar_pontuacao_doutor(doutor_series, col_map)
-    
-    st.progress(analise_pontos['pontos_atuais'] / analise_pontos['pontos_maximos'])
-    st.write(f"**Pontuação Atual:** {analise_pontos['pontos_atuais']} / {analise_pontos['pontos_maximos']}")
+    st.subheader("Diagnóstico de Pontuação")
 
-    with st.expander("Ver detalhes e ações recomendadas"):
-        st.write("**O que falta para atingir a pontuação máxima:**")
-        if analise_pontos['acoes_faltantes']:
-            for acao in analise_pontos['acoes_faltantes']:
-                st.warning(f"- {acao}")
-        else:
-            st.success("Parabéns! Pontuação máxima atingida em todos os itens analisados!")
-
-    st.markdown("---")
+    for categoria, valores in analise_pontos['categorias'].items():
+        if valores['atual'] < valores['max']:
+            st.warning(f"**{categoria}:** Faltam **{valores['max'] - valores['atual']}** pontos.")
     
-    # --- Análise de Respostas da Reunião ---
-    st.subheader("Anotações da Reunião")
-    st.text_area(
-        "Cole aqui o texto da primeira reunião (ONBOARDING 1 - REALIZADO COM SUCESSO)",
-        height=250,
-        key=f"respostas_{doutor_selecionado}"
-    )
+    with st.expander("Ver plano de ação detalhado"):
+        for acao, pontos in analise_pontos['acoes_faltantes']:
+            st.write(f"- {acao} `+{pontos} pts`")
+
+
+def exibir_card_cliente(cliente_series, col_map):
+    """Exibe um 'card' com informações resumidas de um cliente."""
+    with st.expander(f"{cliente_series[col_map['doctor_name']]} - Curva: {cliente_series[col_map['onb grade']]}"):
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Pontos", value=cliente_series.get(col_map.get('onb points'), 'N/A'))
+        col2.metric("Plano", value=cliente_series.get(col_map.get('package'), 'N/A'))
+        dias_restantes = calcular_dias_restantes(cliente_series.get(col_map.get('onb end (farming_at_cx)')))
+        col3.metric("Dias Restantes", value=dias_restantes)
 
 
 def exibir_dashboard(user_profile, df_completo, categorias_dfs):
     """Função principal que monta a interface do dashboard."""
-
     col_map = {col.strip().lower(): col for col in df_completo.columns}
+    
+    exibir_painel_metas(df_completo, col_map)
 
-    # 1. Exibir Painel de KPIs no topo
-    exibir_painel_kpis(df_completo, col_map)
-
-    # 2. Criar as abas com a nova estrutura
     tab_analise, tab_farming, tab_waiting, tab_backtosales, tab_outros = st.tabs([
-        f"🔍 Análise Individual ({len(categorias_dfs.get('atuar', [])) + len(categorias_dfs.get('avancar', []))})",
-        f"🌱 Farming ({len(categorias_dfs.get('farming', []))})",
-        f"⏳ Waiting ({len(categorias_dfs.get('waiting', []))})",
-        f"🔙 Back to Sales ({len(categorias_dfs.get('back_to_sales', []))})",
-        f"❓ Outros ({len(categorias_dfs.get('outros', []))})"
+        "🔍 Análise Individual", "🌱 Farming", "⏳ Waiting", "🔙 Back to Sales", "❓ Outros"
     ])
 
     with tab_analise:
-        st.header("Análise Individual de Doutores")
-        
-        df_para_analise = pd.concat([categorias_dfs.get('atuar', pd.DataFrame()), categorias_dfs.get('avancar', pd.DataFrame())])
-        
+        df_para_analise = pd.concat([categorias_dfs['atuar'], categorias_dfs['avancar']])
         if not df_para_analise.empty:
-            lista_doutores = df_para_analise[col_map['doctor_name']].tolist()
-            
-            doutor_selecionado = st.selectbox(
-                "Selecione um doutor para analisar em detalhes:",
-                options=[""] + sorted(lista_doutores),
-                format_func=lambda x: "Selecione..." if x == "" else x
-            )
-
+            lista_doutores = [""] + sorted(df_para_analise[col_map['doctor_name']].tolist())
+            doutor_selecionado = st.selectbox("Selecione um doutor para análise:", options=lista_doutores)
             if doutor_selecionado:
                 exibir_detalhes_doutor(doutor_selecionado, df_completo, col_map)
         else:
-            st.info("Nenhum doutor na categoria de 'Atuar' ou 'Avançar' para análise.")
+            st.info("Nenhum doutor para análise individual no momento.")
 
     with tab_farming:
-        st.header("Clientes em Estágio de Farming")
-        st.dataframe(categorias_dfs.get('farming', pd.DataFrame()))
+        st.subheader(f"Clientes em Farming ({len(categorias_dfs['farming'])})")
+        for index, row in categorias_dfs['farming'].iterrows():
+            exibir_card_cliente(row, col_map)
 
+    # (Repetir o padrão de cards para as outras abas)
     with tab_waiting:
-        st.header("Clientes em Espera (Waiting)")
-        st.dataframe(categorias_dfs.get('waiting', pd.DataFrame()))
-
+        st.subheader(f"Clientes em Espera ({len(categorias_dfs['waiting'])})")
+        for index, row in categorias_dfs['waiting'].iterrows():
+            exibir_card_cliente(row, col_map)
+            
     with tab_backtosales:
-        st.header("Clientes Retornados para Vendas")
-        st.dataframe(categorias_dfs.get('back_to_sales', pd.DataFrame()))
-        
+        st.subheader(f"Clientes em Back to Sales ({len(categorias_dfs['back_to_sales'])})")
+        for index, row in categorias_dfs['back_to_sales'].iterrows():
+            exibir_card_cliente(row, col_map)
+            
     with tab_outros:
-        st.header("Clientes sem Categoria Definida")
-        st.dataframe(categorias_dfs.get('outros', pd.DataFrame()))
+        st.subheader(f"Clientes Sem Categoria ({len(categorias_dfs['outros'])})")
+        for index, row in categorias_dfs['outros'].iterrows():
+            exibir_card_cliente(row, col_map)
