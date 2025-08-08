@@ -1,4 +1,4 @@
-# app.py (VERSÃO 2.0)
+# app.py (VERSÃO FINAL)
 
 import streamlit as st
 from auth import autenticador
@@ -8,6 +8,8 @@ import pandas as pd
 
 def main():
     """Função principal que executa o aplicativo Streamlit."""
+    
+    st.set_page_config(layout="wide") # Deixa a página mais larga
     
     user, user_profile = autenticador()
 
